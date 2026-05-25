@@ -76,7 +76,7 @@ app.post("/stkpush", async (req, res) => {
         PartyA: phone,
         PartyB: shortCode,
         PhoneNumber: phone,
-        CallBackURL: "https://stk-backend-1-odon.onrender.com/callback",
+        CallBackURL: "https://stk-backend-8m70.onrender.com/callback",
         AccountReference: "Jamii",
         TransactionDesc: "Seller Subscription"
       },
