@@ -59,6 +59,8 @@ async function getToken() {
   try {
     const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
 
+    console.log("🔑 AUTH STRING:", auth);
+
     const res = await axios.get(
       "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
       {
@@ -68,9 +70,16 @@ async function getToken() {
       }
     );
 
+    console.log("✅ TOKEN RESPONSE:", res.data);
+
     return res.data.access_token;
+
   } catch (err) {
-    console.log("❌ TOKEN ERROR:", err.response?.data || err.message);
+    console.log("❌ TOKEN ERROR FULL:");
+    console.log("STATUS:", err.response?.status);
+    console.log("DATA:", err.response?.data);
+    console.log("MESSAGE:", err.message);
+
     throw err;
   }
 }
