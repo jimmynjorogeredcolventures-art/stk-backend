@@ -149,6 +149,12 @@ app.post("/webhook", async (req, res) => {
 
   try {
 
+    /* =====================================================
+       🔥 DEBUG LINE ADDED HERE (IMPORTANT)
+    ===================================================== */
+
+    console.log("🔥 WEBHOOK BODY FULL:", JSON.stringify(req.body, null, 2));
+
     const event = req.body;
 
     console.log("📩 WEBHOOK EVENT:", event.event);
