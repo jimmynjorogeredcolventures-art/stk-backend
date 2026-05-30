@@ -30,12 +30,11 @@ if (!CALLBACK_URL) {
 }
 
 /* =====================================================
-   FIREBASE INIT (OPTION 2 - RENDER SAFE)
+   FIREBASE INIT (RENDER SAFE)
 ===================================================== */
 
 if (!admin.apps.length) {
   try {
-
     const serviceAccount = JSON.parse(
       process.env.FIREBASE_SERVICE_ACCOUNT
     );
@@ -81,17 +80,13 @@ app.post("/stkpush", async (req, res) => {
 
     const reference = `JM_${Date.now()}_${sellerId}`;
 
-    /* =====================================================
-       SAFE PAYSTACK EMAIL (REQUIRED)
-    ===================================================== */
-
     const email = `seller-${sellerId}@jamii.app`;
 
     const payload = {
       email,
       amount: cleanAmount * 100,
       reference,
-      callback_url: CALLBACK_URL,
+      callback_url: CALLBACK_URL, // IMPORTANT: should be /payment-success
       metadata: {
         sellerId,
         phone
@@ -129,35 +124,26 @@ app.post("/stkpush", async (req, res) => {
     });
 
   } catch (e) {
-
     console.log("❌ INIT ERROR:", e.response?.data || e.message);
 
     return res.status(500).json({
       success: false,
       error: e.response?.data || e.message
     });
-
   }
-
 });
 
 /* =====================================================
-   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION - NO POLLING)
+   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION)
 ===================================================== */
 
 app.post("/webhook", async (req, res) => {
 
   try {
 
-    /* =====================================================
-       🔥 DEBUG LINE ADDED HERE (IMPORTANT)
-    ===================================================== */
-
     console.log("🔥 WEBHOOK BODY FULL:", JSON.stringify(req.body, null, 2));
 
     const event = req.body;
-
-    console.log("📩 WEBHOOK EVENT:", event.event);
 
     if (event.event === "charge.success") {
 
@@ -169,15 +155,11 @@ app.post("/webhook", async (req, res) => {
       const sellerId = metadata?.sellerId;
 
       if (!sellerId) {
-        console.log("⚠️ Missing sellerId in webhook");
+        console.log("⚠️ Missing sellerId");
         return res.sendStatus(200);
       }
 
       const expiresAt = Date.now() + (35 * 24 * 60 * 60 * 1000);
-
-      /* =====================================================
-         ACTIVATE SELLER
-      ===================================================== */
 
       await db.collection("sellers").doc(sellerId).update({
         paid: true,
@@ -187,10 +169,6 @@ app.post("/webhook", async (req, res) => {
         paidAt: Date.now(),
         expiresAt
       });
-
-      /* =====================================================
-         UPDATE PAYMENT RECORD
-      ===================================================== */
 
       const snap = await db.collection("payments")
         .where("reference", "==", reference)
@@ -213,7 +191,6 @@ app.post("/webhook", async (req, res) => {
     console.log("❌ WEBHOOK ERROR:", e.message);
     return res.sendStatus(200);
   }
-
 });
 
 /* =====================================================
@@ -223,6 +200,41 @@ app.post("/webhook", async (req, res) => {
 app.post("/callback", (req, res) => {
   console.log("📩 CALLBACK:", req.body);
   res.sendStatus(200);
+});
+
+/* =====================================================
+   🎉 PAYMENT SUCCESS PAGE (FIX FOR "Cannot GET /webhook")
+===================================================== */
+
+app.get("/payment-success", (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Payment Success</title>
+        <style>
+          body {
+            font-family: Arial;
+            text-align: center;
+            padding-top: 100px;
+            background: #f5f5f5;
+          }
+          h1 { color: #009688; }
+        </style>
+      </head>
+      <body>
+        <h1>🎉 Payment Successful</h1>
+        <p>Your Jamii subscription has been activated.</p>
+
+        <p>Redirecting to dashboard...</p>
+
+        <script>
+          setTimeout(() => {
+            window.location.href = "https://YOUR-FRONTEND-DOMAIN.com/seller.html";
+          }, 3000);
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 /* =====================================================
