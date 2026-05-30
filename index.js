@@ -30,12 +30,25 @@ if (!CALLBACK_URL) {
 }
 
 /* =====================================================
-   FIREBASE INIT
+   FIREBASE INIT (OPTION 2 - RENDER SAFE)
 ===================================================== */
 
 if (!admin.apps.length) {
-  admin.initializeApp();
-  console.log("🔥 Firebase ready");
+  try {
+
+    const serviceAccount = JSON.parse(
+      process.env.FIREBASE_SERVICE_ACCOUNT
+    );
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+
+    console.log("🔥 Firebase initialized (Service Account)");
+
+  } catch (e) {
+    console.log("❌ Firebase init error:", e.message);
+  }
 }
 
 const db = admin.firestore();
@@ -69,14 +82,14 @@ app.post("/stkpush", async (req, res) => {
     const reference = `JM_${Date.now()}_${sellerId}`;
 
     /* =====================================================
-       SAFE EMAIL (PAYSTACK REQUIREMENT)
+       SAFE PAYSTACK EMAIL (REQUIRED)
     ===================================================== */
 
     const email = `seller-${sellerId}@jamii.app`;
 
     const payload = {
       email,
-      amount: cleanAmount * 100, // Paystack uses kobo
+      amount: cleanAmount * 100,
       reference,
       callback_url: CALLBACK_URL,
       metadata: {
@@ -85,7 +98,7 @@ app.post("/stkpush", async (req, res) => {
       }
     };
 
-    console.log("📦 PAYSTACK INIT PAYLOAD:", payload);
+    console.log("📦 PAYSTACK PAYLOAD:", payload);
 
     const response = await axios.post(
       `${PAYSTACK_BASE}/transaction/initialize`,
@@ -98,7 +111,7 @@ app.post("/stkpush", async (req, res) => {
       }
     );
 
-    console.log("✅ PAYSTACK RESPONSE:", response.data);
+    console.log("✅ PAYSTACK RESPONSE OK");
 
     await db.collection("payments").add({
       sellerId,
@@ -117,18 +130,19 @@ app.post("/stkpush", async (req, res) => {
 
   } catch (e) {
 
-    console.log("❌ INIT ERROR FULL:", e.response?.data || e.message);
+    console.log("❌ INIT ERROR:", e.response?.data || e.message);
 
     return res.status(500).json({
       success: false,
       error: e.response?.data || e.message
     });
+
   }
 
 });
 
 /* =====================================================
-   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION)
+   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION - NO POLLING)
 ===================================================== */
 
 app.post("/webhook", async (req, res) => {
@@ -137,7 +151,7 @@ app.post("/webhook", async (req, res) => {
 
     const event = req.body;
 
-    console.log("📩 WEBHOOK:", event.event);
+    console.log("📩 WEBHOOK EVENT:", event.event);
 
     if (event.event === "charge.success") {
 
@@ -149,7 +163,7 @@ app.post("/webhook", async (req, res) => {
       const sellerId = metadata?.sellerId;
 
       if (!sellerId) {
-        console.log("⚠️ Missing sellerId");
+        console.log("⚠️ Missing sellerId in webhook");
         return res.sendStatus(200);
       }
 
@@ -197,7 +211,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 /* =====================================================
-   CALLBACK (OPTIONAL ONLY)
+   CALLBACK (OPTIONAL LOG ONLY)
 ===================================================== */
 
 app.post("/callback", (req, res) => {
@@ -210,7 +224,7 @@ app.post("/callback", (req, res) => {
 ===================================================== */
 
 app.get("/", (req, res) => {
-  res.send("🔥 Paystack Backend Running");
+  res.send("🔥 Paystack Backend Running Successfully");
 });
 
 /* =====================================================
