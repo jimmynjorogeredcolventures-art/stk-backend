@@ -13,7 +13,21 @@ app.use(express.json());
 ===================================================== */
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const CALLBACK_URL = process.env.CALLBACK_URL;
+
 const PAYSTACK_BASE = "https://api.paystack.co";
+
+/* =====================================================
+   SAFETY CHECK
+===================================================== */
+
+if (!PAYSTACK_SECRET_KEY) {
+  console.log("❌ Missing PAYSTACK_SECRET_KEY");
+}
+
+if (!CALLBACK_URL) {
+  console.log("❌ Missing CALLBACK_URL");
+}
 
 /* =====================================================
    FIREBASE INIT
@@ -26,9 +40,8 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-
 /* =====================================================
-   STK PUSH (INIT PAYMENT)
+   STK PUSH (PAYSTACK INIT TRANSACTION)
 ===================================================== */
 
 app.post("/stkpush", async (req, res) => {
@@ -44,18 +57,35 @@ app.post("/stkpush", async (req, res) => {
       });
     }
 
+    const cleanAmount = Number(amount);
+
+    if (isNaN(cleanAmount) || cleanAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid amount"
+      });
+    }
+
     const reference = `JM_${Date.now()}_${sellerId}`;
 
+    /* =====================================================
+       SAFE EMAIL (PAYSTACK REQUIREMENT)
+    ===================================================== */
+
+    const email = `seller-${sellerId}@jamii.app`;
+
     const payload = {
-      email: `${phone}@jamii.local`,
-      amount: amount * 100,
+      email,
+      amount: cleanAmount * 100, // Paystack uses kobo
       reference,
+      callback_url: CALLBACK_URL,
       metadata: {
         sellerId,
         phone
-      },
-      callback_url: process.env.CALLBACK_URL
+      }
     };
+
+    console.log("📦 PAYSTACK INIT PAYLOAD:", payload);
 
     const response = await axios.post(
       `${PAYSTACK_BASE}/transaction/initialize`,
@@ -68,10 +98,12 @@ app.post("/stkpush", async (req, res) => {
       }
     );
 
+    console.log("✅ PAYSTACK RESPONSE:", response.data);
+
     await db.collection("payments").add({
       sellerId,
       phone,
-      amount,
+      amount: cleanAmount,
       reference,
       status: "pending",
       createdAt: Date.now()
@@ -84,19 +116,19 @@ app.post("/stkpush", async (req, res) => {
     });
 
   } catch (e) {
-    console.log("❌ INIT ERROR:", e.message);
+
+    console.log("❌ INIT ERROR FULL:", e.response?.data || e.message);
 
     return res.status(500).json({
       success: false,
-      error: e.message
+      error: e.response?.data || e.message
     });
   }
 
 });
 
-
 /* =====================================================
-   🔥 REAL PAYSTACK WEBHOOK (NO POLLING)
+   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION)
 ===================================================== */
 
 app.post("/webhook", async (req, res) => {
@@ -105,11 +137,7 @@ app.post("/webhook", async (req, res) => {
 
     const event = req.body;
 
-    console.log("📩 WEBHOOK RECEIVED:", event.event);
-
-    /* =====================================================
-       ONLY HANDLE SUCCESSFUL PAYMENT
-    ===================================================== */
+    console.log("📩 WEBHOOK:", event.event);
 
     if (event.event === "charge.success") {
 
@@ -119,32 +147,26 @@ app.post("/webhook", async (req, res) => {
       const metadata = data.metadata;
 
       const sellerId = metadata?.sellerId;
-      const phone = metadata?.phone;
 
       if (!sellerId) {
-        console.log("⚠️ Missing sellerId in metadata");
+        console.log("⚠️ Missing sellerId");
         return res.sendStatus(200);
       }
 
-      console.log("💰 PAYMENT SUCCESS:", reference);
-
-      const expiresAt =
-        Date.now() + (35 * 24 * 60 * 60 * 1000);
+      const expiresAt = Date.now() + (35 * 24 * 60 * 60 * 1000);
 
       /* =====================================================
          ACTIVATE SELLER
       ===================================================== */
 
-      await db.collection("sellers")
-        .doc(sellerId)
-        .update({
-          paid: true,
-          locked: false,
-          requiresPayment: false,
-          subscriptionType: "Paid Subscription",
-          paidAt: Date.now(),
-          expiresAt
-        });
+      await db.collection("sellers").doc(sellerId).update({
+        paid: true,
+        locked: false,
+        requiresPayment: false,
+        subscriptionType: "Paid Subscription",
+        paidAt: Date.now(),
+        expiresAt
+      });
 
       /* =====================================================
          UPDATE PAYMENT RECORD
@@ -169,33 +191,30 @@ app.post("/webhook", async (req, res) => {
 
   } catch (e) {
     console.log("❌ WEBHOOK ERROR:", e.message);
-    return res.sendStatus(200); // IMPORTANT: always 200
+    return res.sendStatus(200);
   }
 
 });
 
-
 /* =====================================================
-   CALLBACK (OPTIONAL LOG ONLY)
+   CALLBACK (OPTIONAL ONLY)
 ===================================================== */
 
 app.post("/callback", (req, res) => {
-  console.log("📩 CALLBACK (IGNORED):", req.body);
+  console.log("📩 CALLBACK:", req.body);
   res.sendStatus(200);
 });
-
 
 /* =====================================================
    HEALTH CHECK
 ===================================================== */
 
 app.get("/", (req, res) => {
-  res.send("🔥 Paystack Webhook Backend Running");
+  res.send("🔥 Paystack Backend Running");
 });
 
-
 /* =====================================================
-   START SERVER
+   SERVER START
 ===================================================== */
 
 const PORT = process.env.PORT || 3000;
