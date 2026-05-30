@@ -228,10 +228,11 @@ app.get("/payment-success", (req, res) => {
         <p>Redirecting to dashboard...</p>
 
         <script>
-          setTimeout(() => {
-            window.location.href = "https://YOUR-FRONTEND-DOMAIN.com/seller.html";
-          }, 3000);
-        </script>
+  setTimeout(() => {
+    // Try to return to app safely
+    window.location.href = "/";
+  }, 2000);
+</script>
       </body>
     </html>
   `);
