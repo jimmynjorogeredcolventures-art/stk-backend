@@ -30,20 +30,18 @@ if (!CALLBACK_URL) {
 }
 
 /* =====================================================
-   FIREBASE INIT (RENDER SAFE)
+   FIREBASE INIT
 ===================================================== */
 
 if (!admin.apps.length) {
   try {
-    const serviceAccount = JSON.parse(
-      process.env.FIREBASE_SERVICE_ACCOUNT
-    );
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
 
-    console.log("🔥 Firebase initialized (Service Account)");
+    console.log("🔥 Firebase initialized");
 
   } catch (e) {
     console.log("❌ Firebase init error:", e.message);
@@ -53,13 +51,11 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 
 /* =====================================================
-   STK PUSH (PAYSTACK INIT TRANSACTION)
+   PAYSTACK INIT TRANSACTION
 ===================================================== */
 
 app.post("/stkpush", async (req, res) => {
-
   try {
-
     const { phone, amount, sellerId } = req.body;
 
     if (!phone || !amount || !sellerId) {
@@ -80,20 +76,26 @@ app.post("/stkpush", async (req, res) => {
 
     const reference = `JM_${Date.now()}_${sellerId}`;
 
-    const email = `seller-${sellerId}@jamii.app`;
+    /* ⚠️ FIX 1: use valid email */
+    const email = "test@jamii.app";
+
+    /* =====================================================
+       PAYSTACK PAYLOAD (FIXED)
+    ===================================================== */
 
     const payload = {
       email,
       amount: cleanAmount * 100,
+      currency: "KES",               // 🔥 FIX 2 (IMPORTANT)
       reference,
-      callback_url: CALLBACK_URL, // IMPORTANT: should be /payment-success
+      callback_url: CALLBACK_URL,
       metadata: {
         sellerId,
         phone
       }
     };
 
-    console.log("📦 PAYSTACK PAYLOAD:", payload);
+    console.log("📦 PAYSTACK PAYLOAD:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
       `${PAYSTACK_BASE}/transaction/initialize`,
@@ -105,8 +107,6 @@ app.post("/stkpush", async (req, res) => {
         }
       }
     );
-
-    console.log("✅ PAYSTACK RESPONSE OK");
 
     await db.collection("payments").add({
       sellerId,
@@ -124,7 +124,10 @@ app.post("/stkpush", async (req, res) => {
     });
 
   } catch (e) {
-    console.log("❌ INIT ERROR:", e.response?.data || e.message);
+    console.log(
+      "❌ PAYSTACK ERROR:",
+      JSON.stringify(e.response?.data, null, 2) || e.message
+    );
 
     return res.status(500).json({
       success: false,
@@ -134,30 +137,20 @@ app.post("/stkpush", async (req, res) => {
 });
 
 /* =====================================================
-   🔥 PAYSTACK WEBHOOK (AUTO ACTIVATION)
+   WEBHOOK
 ===================================================== */
 
 app.post("/webhook", async (req, res) => {
-
   try {
-
-    console.log("🔥 WEBHOOK BODY FULL:", JSON.stringify(req.body, null, 2));
+    console.log("🔥 WEBHOOK:", JSON.stringify(req.body, null, 2));
 
     const event = req.body;
 
     if (event.event === "charge.success") {
-
-      const data = event.data;
-
-      const reference = data.reference;
-      const metadata = data.metadata;
-
+      const { reference, metadata } = event.data;
       const sellerId = metadata?.sellerId;
 
-      if (!sellerId) {
-        console.log("⚠️ Missing sellerId");
-        return res.sendStatus(200);
-      }
+      if (!sellerId) return res.sendStatus(200);
 
       const expiresAt = Date.now() + (35 * 24 * 60 * 60 * 1000);
 
@@ -194,7 +187,7 @@ app.post("/webhook", async (req, res) => {
 });
 
 /* =====================================================
-   CALLBACK (OPTIONAL LOG ONLY)
+   CALLBACK
 ===================================================== */
 
 app.post("/callback", (req, res) => {
@@ -203,36 +196,18 @@ app.post("/callback", (req, res) => {
 });
 
 /* =====================================================
-   🎉 PAYMENT SUCCESS PAGE (FIX FOR "Cannot GET /webhook")
+   SUCCESS PAGE
 ===================================================== */
 
 app.get("/payment-success", (req, res) => {
   res.send(`
     <html>
-      <head>
-        <title>Payment Success</title>
-        <style>
-          body {
-            font-family: Arial;
-            text-align: center;
-            padding-top: 100px;
-            background: #f5f5f5;
-          }
-          h1 { color: #009688; }
-        </style>
-      </head>
-      <body>
+      <body style="text-align:center;font-family:Arial;padding-top:80px">
         <h1>🎉 Payment Successful</h1>
-        <p>Your Jamii subscription has been activated.</p>
-
-        <p>Redirecting to dashboard...</p>
-
+        <p>Your subscription is active.</p>
         <script>
-  setTimeout(() => {
-    // Try to return to app safely
-    window.location.href = "/";
-  }, 2000);
-</script>
+          setTimeout(() => window.location.href = "/", 2000);
+        </script>
       </body>
     </html>
   `);
@@ -247,7 +222,7 @@ app.get("/", (req, res) => {
 });
 
 /* =====================================================
-   SERVER START
+   SERVER
 ===================================================== */
 
 const PORT = process.env.PORT || 3000;
